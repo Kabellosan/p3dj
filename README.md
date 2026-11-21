@@ -16,7 +16,7 @@ Open it on your Android phone in Chrome: **https://kabellosan.github.io/p3dj/**
 2. Open the app's **Settings** and copy the **Client ID**.
 3. Open P3 DJ on your phone, paste the Client ID (you can pick a playlist later by tapping "Music for skips"; or paste a link here
    (empty = your Liked Songs, or type `dj` for Spotify's DJ), and tap **Connect Spotify**.
-4. Open the Spotify app on your phone once so it shows up as a Spotify device. Skips play on your phone by default; Settings → "Play my music on" lets you pick another device.
+4. Open the Spotify app on your phone once so it shows up as a Spotify device. To keep it reachable, set Spotify's battery use to Unrestricted (Android Settings → Apps → Spotify → Battery). If it falls asleep anyway, Skip opens Spotify for you and starts the music. Skips play on your phone by default; Settings → "Play my music on" lets you pick another device.
 
 ## Using it
 

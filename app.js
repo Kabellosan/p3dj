@@ -1,5 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
-const VERSION = 7;   // bump together with the ?v= in index.html so phones fetch the new file
+const VERSION = 8;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -92,11 +92,35 @@ async function phoneDevice() {
   const { devices } = await api("/me/player/devices");
   const usable = devices.filter((d) => !d.is_restricted);
   const chosen = store.get("deviceName");
-  return (chosen && usable.find((d) => d.name === chosen))
+  const dev = (chosen && usable.find((d) => d.name === chosen))
       || usable.find((d) => d.type === "Smartphone" && d.is_active)
       || usable.find((d) => d.type === "Smartphone")
       || null;
+  if (dev && dev.type === "Smartphone") { store.set("phoneId", dev.id); store.set("phoneName", dev.name); }
+  return dev;
 }
+
+// Android often puts Spotify to sleep, and then it drops off Spotify's device list.
+// 1. Try the phone's remembered device id anyway: Spotify can often wake it.
+// 2. Otherwise open the Spotify app (that's what wakes it), wait for the phone to show up,
+//    then start the music there. You land in Spotify; P3 DJ keeps running behind it.
+async function startOnPhone() {
+  let dev = await phoneDevice();
+  if (dev) { await startMusic(dev.id); return dev.name; }
+  const known = store.get("phoneId");
+  if (known) {
+    try { await startMusic(known); log("Woke Spotify on your phone."); return store.get("phoneName") || "your phone"; }
+    catch (e) { log("Spotify on your phone is asleep, opening it…"); }
+  }
+  location.href = "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.spotify.music;end";
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try { dev = await phoneDevice(); } catch { dev = null; }
+    if (dev) { await startMusic(dev.id); return dev.name; }
+  }
+  throw new Error("Spotify didn't show up on your phone. Open Spotify, play anything for a second, then skip again.");
+}
+
 async function fillDevices() {
   const sel = $("device");
   try {
@@ -231,11 +255,9 @@ async function skip() {
   if (!skipping) log("Can't tell which song is on, so skipping for 3:30. Tap Back to P3 any time.");
   mode = "spotify"; render();
   try {
-    const dev = await phoneDevice();
-    if (!dev) throw new Error("Can't find your phone in Spotify. Open the Spotify app on your phone for a moment, then try again.");
     p3.pause();
-    await startMusic(dev.id);
-    log(`Skipped → Spotify on ${dev.name}, back in ${Math.round(returnAt - now)} s`);
+    const name = await startOnPhone();
+    log(`Skipped → Spotify on ${name}, back in ${Math.round(returnAt - Date.now() / 1000)} s`);
     setPoll(5000);
   } catch (e) {
     log(e.message); status(e.message);
@@ -251,7 +273,10 @@ async function startMusic(deviceId) {
   const url = `/me/player/play?device_id=${deviceId}`;
   if (isDJ()) {
     try { await api(url, { method: "PUT", body: JSON.stringify({ context_uri: DJ_URI }) }); log("Started Spotify's DJ."); return; }
-    catch (e) { log("Spotify wouldn't start the DJ (" + e.message + "), playing your Liked Songs instead."); }
+    catch (e) {
+      if (/\b404\b|device/i.test(e.message)) throw e;
+      log("Spotify wouldn't start the DJ (" + e.message + "), playing your Liked Songs instead.");
+    }
   }
   // A playlist plays as itself (shuffled, random start), so Spotify shows it as the source
   // and it works even for playlists the app isn't allowed to list.
@@ -264,7 +289,10 @@ async function startMusic(deviceId) {
       await api(`/me/player/shuffle?state=true&device_id=${deviceId}`, { method: "PUT" }).catch(() => {});
       await api(url, { method: "PUT", body: JSON.stringify(body) });
       return;
-    } catch (e) { log("Couldn't play that playlist (" + e.message + "), using your songs list instead."); }
+    } catch (e) {
+      if (/\b404\b|device/i.test(e.message)) throw e;   // the phone is asleep, not the playlist's fault
+      log("Couldn't play that playlist (" + e.message + "), using your songs list instead.");
+    }
   }
   if (!pool.length) await loadPool();
   await api(url, { method: "PUT", body: JSON.stringify({ uris: nextSongs() }) });
