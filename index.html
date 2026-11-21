@@ -49,6 +49,11 @@
     <div id="now">Tap play to start</div>
     <button id="skip" disabled>Play P3</button>
     <label class="toggle"><input type="checkbox" id="chain"> Keep skipping if P3 plays two songs in a row</label>
+    <div class="hidden" id="devicebox">
+      <label for="device">Play my music on</label>
+      <select id="device" style="width:100%;padding:11px;border-radius:9px;background:#000;color:#f4f4f4;border:1px solid #333;font-size:16px"></select>
+      <div class="row"><button id="refreshDevices">Refresh list</button><span class="muted">Phone missing? Open the Spotify app on it, then refresh.</span></div>
+    </div>
     <div class="row">
       <button id="settings">Settings</button>
       <span class="muted" id="status"></span>

@@ -79,11 +79,27 @@ function nextSongs(n = 10) {
   for (let i = 0; i < Math.min(n, pool.length); i++) out.push(pool[poolIdx++ % pool.length]);
   return out;
 }
+// Which Spotify device plays your skips. Default: this phone (type Smartphone), never just
+// "whatever was active", which is often a computer. You can pick one in the list.
 async function phoneDevice() {
   const { devices } = await api("/me/player/devices");
-  return devices.find((d) => d.is_active && !d.is_restricted)
-      || devices.find((d) => d.type === "Smartphone" && !d.is_restricted)
-      || devices.find((d) => !d.is_restricted);
+  const usable = devices.filter((d) => !d.is_restricted);
+  const chosen = store.get("deviceName");
+  return (chosen && usable.find((d) => d.name === chosen))
+      || usable.find((d) => d.type === "Smartphone" && d.is_active)
+      || usable.find((d) => d.type === "Smartphone")
+      || null;
+}
+async function fillDevices() {
+  const sel = $("device");
+  try {
+    const { devices } = await api("/me/player/devices");
+    const chosen = store.get("deviceName") || "";
+    const names = devices.filter((d) => !d.is_restricted).map((d) => d.name);
+    if (chosen && !names.includes(chosen)) names.push(chosen);
+    sel.innerHTML = `<option value="">This phone (automatic)</option>` +
+      names.map((n) => `<option ${n === chosen ? "selected" : ""}>${n.replace(/</g, "&lt;")}</option>`).join("");
+  } catch (e) { log("Couldn't list Spotify devices: " + e.message); }
 }
 
 // ---------- What P3 is playing ----------
@@ -201,7 +217,7 @@ async function skip() {
   mode = "spotify"; render();
   try {
     const dev = await phoneDevice();
-    if (!dev) throw new Error("Spotify isn't open on any device. Open the Spotify app once, then try again.");
+    if (!dev) throw new Error("Can't find your phone in Spotify. Open the Spotify app on your phone for a moment, then try again.");
     p3.pause();
     await startMusic(dev.id);
     log(`Skipped → Spotify on ${dev.name}, back in ${Math.round(returnAt - now)} s`);
@@ -258,7 +274,9 @@ async function init() {
   $("chain").checked = store.get("chain") === "1";
   $("chain").onchange = () => store.set("chain", $("chain").checked ? "1" : "0");
   $("connect").onclick = login;
-  $("settings").onclick = () => { $("setup").classList.toggle("hidden"); };
+  $("settings").onclick = () => { $("devicebox").classList.toggle("hidden"); $("setup").classList.toggle("hidden"); fillDevices(); };
+  $("device").onchange = () => { store.set("deviceName", $("device").value); log("Skips will play on: " + ($("device").value || "this phone")); };
+  $("refreshDevices").onclick = fillDevices;
   if (!store.get("access")) return;
 
   $("setup").classList.add("hidden");
