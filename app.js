@@ -1,5 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
-const VERSION = 6;   // bump together with the ?v= in index.html so phones fetch the new file
+const VERSION = 7;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -176,6 +176,10 @@ let pollTimer = null;
 function setPoll(ms) { clearInterval(pollTimer); pollTimer = setInterval(pollNowPlaying, ms); pollNowPlaying(); }
 
 function render() {
+  const pp = $("playPause");
+  const playing = mode !== "off" && !paused;
+  pp.textContent = playing ? "⏸" : "▶";
+  pp.setAttribute("aria-label", playing ? "Pause" : "Play");
   const btn = $("skip");
   btn.classList.toggle("back", mode === "spotify");
   $("source").classList.toggle("spotify", mode === "spotify");
@@ -202,19 +206,24 @@ function render() {
   }
 }
 setInterval(() => {
-  if (mode === "spotify" && Date.now() / 1000 >= returnAt) backToP3("P3's song should be over, back to P3.");
+  if (mode === "spotify" && Date.now() / 1000 >= returnAt) {
+    if (paused) { mode = "p3"; skipping = null; log("P3's song ended while paused. Play resumes P3."); }
+    else backToP3("P3's song should be over, back to P3.");
+  }
   if (mode !== "off") render();
 }, 1000);
 
 async function playP3() {
   p3.src = CFG.streamUrl + "?t=" + Date.now();   // fresh connection = live edge, no backlog
-  try { await p3.play(); mode = "p3"; setPoll(5000); }
+  p3.volume = volume();
+  try { await p3.play(); mode = "p3"; paused = false; setPoll(5000); }
   catch (e) { mode = "off"; status("Tap Play P3 to start."); log("Couldn't start P3 automatically: " + e.message); }
   render();
 }
 
 async function skip() {
   if (mode !== "p3") return;
+  paused = false;
   const now = Date.now() / 1000;
   skipping = songPlaying() ? song : null;
   returnAt = skipping ? skipping.end : now + UNKNOWN_SONG_S;
@@ -344,6 +353,43 @@ async function choose(item) {
   try { await loadPool(); } catch (e) { log(e.message); }
 }
 
+// ---------- Play / pause / stop / volume ----------
+// P3 is live radio, so pausing and playing again jumps back to what's on air now.
+let paused = false;
+const volume = () => Number($("volume").value) / 100;
+async function pauseAll() {
+  if (mode === "off" || paused) return;
+  paused = true;
+  if (mode === "spotify") { try { await api("/me/player/pause", { method: "PUT" }); } catch (e) { log(e.message); } }
+  else p3.pause();
+  render();
+}
+async function resumeAll() {
+  if (mode === "off") return playP3();
+  if (!paused) return;
+  paused = false;
+  if (mode === "spotify") { try { await api("/me/player/play", { method: "PUT" }); } catch (e) { log(e.message); } }
+  else await playP3();
+  render();
+}
+async function stopAll() {
+  if (mode === "spotify") { try { await api("/me/player/pause", { method: "PUT" }); } catch (e) { log(e.message); } }
+  p3.pause(); p3.removeAttribute("src"); p3.load();
+  clearInterval(pollTimer);
+  mode = "off"; paused = false; skipping = null;
+  $("now").textContent = "Stopped";
+  render();
+}
+let volTimer = null;
+function onVolume() {
+  store.set("volume", $("volume").value);
+  p3.volume = volume();
+  clearTimeout(volTimer);
+  if (mode === "spotify") volTimer = setTimeout(() =>
+    api(`/me/player/volume?volume_percent=${$("volume").value}`, { method: "PUT" })
+      .catch(() => log("Spotify won't take volume from the app on this device; use the phone's buttons.")), 300);
+}
+
 // ---------- Wiring ----------
 async function init() {
   const q = new URLSearchParams(location.search);
@@ -368,6 +414,10 @@ async function init() {
   loadPool().catch((e) => log(e.message));
   showSource();
   $("music").onclick = openLibrary;
+  $("volume").value = store.get("volume") || "100";
+  $("volume").oninput = onVolume;
+  $("playPause").onclick = () => (mode !== "off" && !paused ? pauseAll() : resumeAll());
+  $("stop").onclick = stopAll;
   $("libsearch").oninput = drawLibrary;
   pollNowPlaying();
 
@@ -379,8 +429,9 @@ async function init() {
   p3.addEventListener("pause", () => { if (mode === "p3" && !p3.ended) log("P3 paused."); });
   if ("mediaSession" in navigator) {
     navigator.mediaSession.setActionHandler("nexttrack", () => skip());
-    navigator.mediaSession.setActionHandler("play", () => (mode === "spotify" ? backToP3("Back to P3 from the media controls.") : playP3()));
-    navigator.mediaSession.setActionHandler("pause", () => p3.pause());
+    navigator.mediaSession.setActionHandler("play", () => resumeAll());
+    navigator.mediaSession.setActionHandler("pause", () => pauseAll());
+    navigator.mediaSession.setActionHandler("stop", () => stopAll());
   }
 }
 log(`P3 DJ version ${VERSION}`);

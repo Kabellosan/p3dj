@@ -28,6 +28,9 @@
   .toggle { display:flex; gap:10px; align-items:center; margin-top:12px; font-size:15px; }
   .toggle input { width:auto; }
   .hidden { display:none; }
+  .controls { display:flex; gap:10px; align-items:center; margin-top:12px; }
+  .controls button { width:52px; height:52px; padding:0; font-size:20px; flex:none; }
+  .controls input[type=range] { flex:1; accent-color:var(--accent); padding:0; border:0; background:none; }
   #music { display:flex; align-items:center; gap:12px; margin-top:14px; padding:10px; border-radius:12px; background:#262626; border:0; width:100%; text-align:left; color:var(--fg); }
   #music img, .tile img, .tile .ph { width:48px; height:48px; border-radius:6px; object-fit:cover; flex:none; background:#333; }
   .tile .ph { display:flex; align-items:center; justify-content:center; font-size:22px; }
@@ -57,6 +60,11 @@
     <div id="source">P3 live</div>
     <div id="now">Tap play to start</div>
     <button id="skip" disabled>Play P3</button>
+    <div class="controls">
+      <button id="playPause" aria-label="Pause">⏸</button>
+      <button id="stop" aria-label="Stop">⏹</button>
+      <input type="range" id="volume" min="0" max="100" step="1" aria-label="Volume">
+    </div>
     <button id="music"><span class="ph" id="musicArt">♪</span><span><small class="muted">Music for skips</small><br><b id="musicName">Liked Songs</b></span></button>
     <div class="hidden" id="library">
       <input id="libsearch" placeholder="Filter your playlists">
@@ -78,7 +86,7 @@
 
   <audio id="p3" preload="none"></audio>
 </main>
-<script src="config.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
