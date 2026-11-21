@@ -1,4 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
+const VERSION = 6;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -382,4 +383,5 @@ async function init() {
     navigator.mediaSession.setActionHandler("pause", () => p3.pause());
   }
 }
+log(`P3 DJ version ${VERSION}`);
 init().catch((e) => { log(e.message); status(e.message); });
