@@ -15,7 +15,7 @@ Open it on your Android phone in Chrome: **https://kabellosan.github.io/p3dj/**
    - APIs used: tick **Web API**.
 2. Open the app's **Settings** and copy the **Client ID**.
 3. Open P3 DJ on your phone, paste the Client ID, optionally paste a playlist link
-   (empty = your Liked Songs), and tap **Connect Spotify**.
+   (empty = your Liked Songs, or type `dj` for Spotify's DJ), and tap **Connect Spotify**.
 4. Open the Spotify app once so the phone shows up as a Spotify device.
 
 ## Using it
