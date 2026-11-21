@@ -130,6 +130,14 @@ async function pollNowPlaying() {
     log(`P3 song: ${d.artist} - ${d.track || ""} (${len ? Math.round(len) + " s" : "length unknown"})`);
     onNewSong(prev);
   }
+  // The show description coming back usually means the hosts are back (P3 often cuts songs short).
+  // It has also been seen flipping early, so only trust it once most of the song has played.
+  // A blank title tells us nothing and is ignored.
+  if (!d.song && d.title && d.title.trim() && mode === "spotify" && skipping) {
+    const played = Date.now() / 1000 - skipping.start;
+    const enough = skipping.len ? played >= 0.6 * skipping.len : played >= 90;
+    if (enough) backToP3("P3's now-playing says the show is back, back to P3.");
+  }
   firstPoll = false;
   render();
 }
