@@ -49,11 +49,13 @@
   <div class="muted">The P3 hosts, live. Bad song? Skip it and your Spotify takes over until the hosts are back.</div>
 
   <div class="card" id="setup">
-    <label for="clientId">Spotify app Client ID (see the README for the 2-minute setup)</label>
-    <input id="clientId" autocomplete="off" placeholder="e.g. 3f2a…">
+    <div id="clientIdBox">
+      <label for="clientId">Spotify app Client ID (see the README for the 2-minute setup)</label>
+      <input id="clientId" autocomplete="off" placeholder="e.g. 3f2a…">
+    </div>
     <label for="playlist">Music for skips: a Spotify playlist link, type "dj" for Spotify's DJ, or leave empty for your Liked Songs</label>
     <input id="playlist" placeholder="https://open.spotify.com/playlist/…">
-    <div class="row"><button class="go" id="connect">Connect Spotify</button></div>
+    <div class="row"><button class="go" id="connect">Connect Spotify</button><a href="#" class="muted hidden" id="clientIdToggle">Use my own Spotify app</a></div>
   </div>
 
   <div class="card hidden" id="radio">
@@ -86,7 +88,7 @@
 
   <audio id="p3" preload="none"></audio>
 </main>
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

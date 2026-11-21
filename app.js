@@ -1,5 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
-const VERSION = 8;   // bump together with the ?v= in index.html so phones fetch the new file
+const VERSION = 9;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -19,7 +19,7 @@ const status = (m) => ($("status").textContent = m);
 // ---------- Spotify login (PKCE: no server, no secret) ----------
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 async function login() {
-  const clientId = $("clientId").value.trim();
+  const clientId = $("clientId").value.trim() || CFG.spotifyClientId || "";
   if (!clientId) return alert("Paste your Spotify Client ID first.");
   store.set("clientId", clientId);
   store.set("playlist", $("playlist").value.trim());
@@ -427,6 +427,11 @@ async function init() {
     history.replaceState(null, "", REDIRECT);
   }
   $("clientId").value = store.get("clientId") || "";
+  if (CFG.spotifyClientId) {   // shared app: friends just tap Connect
+    $("clientIdBox").classList.add("hidden");
+    $("clientIdToggle").classList.remove("hidden");
+    $("clientIdToggle").onclick = (e) => { e.preventDefault(); $("clientIdBox").classList.toggle("hidden"); };
+  }
   $("playlist").value = store.get("playlist") || "";
   $("chain").checked = store.get("chain") === "1";
   $("chain").onchange = () => store.set("chain", $("chain").checked ? "1" : "0");

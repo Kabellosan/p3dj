@@ -39,3 +39,13 @@ For personal listening only.
 `day-behind/` holds an earlier version that downloads yesterday's show, finds the songs with
 speech/music detection, and fills them with Spotify in a desktop browser. See `python -m p3dj --help`
 inside that folder.
+
+## Letting friends use it
+
+With your Client ID filled in as `spotifyClientId` in `config.js`, a friend just opens the link and
+taps **Connect Spotify**. They don't need their own Spotify app.
+
+Spotify keeps apps in "development mode" limited to people you add by hand:
+open your app on https://developer.spotify.com/dashboard → **User Management** → add the friend's
+name and the email they use for Spotify. Until you do, their login is refused. Friends need Premium
+too, since the app controls Spotify playback.
