@@ -1,0 +1,2 @@
+inaSpeechSegmenter>=0.8
+requests

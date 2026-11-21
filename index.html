@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<title>P3 DJ</title>
+<style>
+  :root { --bg:#111; --fg:#f4f4f4; --muted:#9a9a9a; --accent:#1db954; --p3:#ff001e; --card:#1d1d1d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { margin:0; font-size:26px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border-radius:14px; padding:16px; margin:14px 0; }
+  label { display:block; font-size:14px; color:var(--muted); margin:10px 0 4px; }
+  input { width:100%; padding:11px; border-radius:9px; border:1px solid #333; background:#000; color:var(--fg); font-size:16px; }
+  button { padding:12px 18px; border-radius:999px; border:0; background:#333; color:var(--fg); font-weight:600; font-size:16px; }
+  button.go { background:var(--accent); color:#000; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  #source { font-size:13px; letter-spacing:.06em; text-transform:uppercase; font-weight:700; color:var(--p3); }
+  #source.spotify { color:var(--accent); }
+  #now { font-size:21px; font-weight:650; margin-top:4px; min-height:1.4em; }
+  #skip { width:100%; height:120px; margin-top:16px; font-size:30px; border-radius:22px; background:var(--accent); color:#000; }
+  #skip:disabled { background:#2a2a2a; color:#666; }
+  #skip.back { background:var(--p3); color:#fff; }
+  .toggle { display:flex; gap:10px; align-items:center; margin-top:12px; font-size:15px; }
+  .toggle input { width:auto; }
+  .hidden { display:none; }
+  #log { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:140px; overflow:auto; margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>P3 DJ</h1>
+  <div class="muted">The P3 hosts, live. Bad song? Skip it and your Spotify takes over until the hosts are back.</div>
+
+  <div class="card" id="setup">
+    <label for="clientId">Spotify app Client ID (see the README for the 2-minute setup)</label>
+    <input id="clientId" autocomplete="off" placeholder="e.g. 3f2a…">
+    <label for="playlist">Music for skips: a Spotify playlist link, or leave empty for your Liked Songs</label>
+    <input id="playlist" placeholder="https://open.spotify.com/playlist/…">
+    <div class="row"><button class="go" id="connect">Connect Spotify</button></div>
+  </div>
+
+  <div class="card hidden" id="radio">
+    <div id="source">P3 live</div>
+    <div id="now">Tap play to start</div>
+    <button id="skip" disabled>Play P3</button>
+    <label class="toggle"><input type="checkbox" id="chain"> Keep skipping if P3 plays two songs in a row</label>
+    <div class="row">
+      <button id="settings">Settings</button>
+      <span class="muted" id="status"></span>
+    </div>
+    <div class="muted" style="margin-top:10px">Tip: your car's or headphones' "next track" button works as Skip.</div>
+    <div id="log"></div>
+  </div>
+
+  <audio id="p3" preload="none"></audio>
+</main>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
