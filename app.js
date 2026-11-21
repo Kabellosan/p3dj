@@ -1,7 +1,7 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
-const SCOPES = "user-library-read playlist-read-private user-modify-playback-state user-read-playback-state";
+const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
 const $ = (id) => document.getElementById(id);
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -66,7 +66,13 @@ async function loadPool() {
   let next = m ? `/playlists/${m[1]}/tracks?limit=100&fields=next,items(track(uri,is_local))` : "/me/tracks?limit=50";
   const uris = [];
   while (next && uris.length < 1000) {
-    const page = await api(next.replace("https://api.spotify.com/v1", ""));
+    let page;
+    try { page = await api(next.replace("https://api.spotify.com/v1", "")); }
+    catch (e) {
+      if (!m || uris.length) throw e;
+      log("Can't list that playlist's songs, so the backup list is your Liked Songs.");
+      next = "/me/tracks?limit=50"; continue;
+    }
     for (const it of page.items) if (it.track && !it.track.is_local) uris.push(it.track.uri);
     next = page.next;
   }
@@ -208,7 +214,6 @@ async function playP3() {
 
 async function skip() {
   if (mode !== "p3") return;
-  if (!pool.length) await loadPool();
   const now = Date.now() / 1000;
   skipping = songPlaying() ? song : null;
   returnAt = skipping ? skipping.end : now + UNKNOWN_SONG_S;
@@ -238,6 +243,20 @@ async function startMusic(deviceId) {
     try { await api(url, { method: "PUT", body: JSON.stringify({ context_uri: DJ_URI }) }); log("Started Spotify's DJ."); return; }
     catch (e) { log("Spotify wouldn't start the DJ (" + e.message + "), playing your Liked Songs instead."); }
   }
+  // A playlist plays as itself (shuffled, random start), so Spotify shows it as the source
+  // and it works even for playlists the app isn't allowed to list.
+  const m = (store.get("playlist") || "").match(/playlist[/:]([A-Za-z0-9]+)/);
+  if (m) {
+    const count = Number(store.get("playlistCount") || 0);
+    const body = { context_uri: "spotify:playlist:" + m[1] };
+    if (count > 1) body.offset = { position: Math.floor(Math.random() * count) };
+    try {
+      await api(`/me/player/shuffle?state=true&device_id=${deviceId}`, { method: "PUT" }).catch(() => {});
+      await api(url, { method: "PUT", body: JSON.stringify(body) });
+      return;
+    } catch (e) { log("Couldn't play that playlist (" + e.message + "), using your songs list instead."); }
+  }
+  if (!pool.length) await loadPool();
   await api(url, { method: "PUT", body: JSON.stringify({ uris: nextSongs() }) });
 }
 
@@ -259,6 +278,69 @@ function onNewSong(prev) {
   } else {
     backToP3("P3 started a new song, back to P3.");
   }
+}
+
+// ---------- Library picker ----------
+let playlists = null;
+const esc = (t) => String(t || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function currentSource() {
+  if (isDJ()) return { name: "Spotify DJ", art: null, icon: "🎧" };
+  const m = (store.get("playlist") || "").match(/playlist[/:]([A-Za-z0-9]+)/);
+  if (!m) return { name: "Liked Songs", art: null, icon: "♥" };
+  return { name: store.get("playlistName") || "Playlist", art: store.get("playlistArt") };
+}
+function showSource() {
+  const s = currentSource();
+  $("musicName").textContent = s.name;
+  $("musicArt").outerHTML = s.art ? `<img id="musicArt" src="${esc(s.art)}" alt="">` : `<span class="ph" id="musicArt">${s.icon || "♪"}</span>`;
+}
+async function openLibrary() {
+  const box = $("library");
+  box.classList.toggle("hidden");
+  if (box.classList.contains("hidden")) return;
+  if (!playlists) {
+    $("liblist").textContent = "Loading your playlists…";
+    playlists = [];
+    let next = "/me/playlists?limit=50";
+    try {
+      while (next && playlists.length < 500) {
+        const page = await api(next.replace("https://api.spotify.com/v1", ""));
+        for (const p of page.items) if (p) playlists.push({ id: p.id, name: p.name, owner: p.owner?.display_name,
+          count: p.tracks?.total ?? p.items?.total, art: p.images?.slice(-1)[0]?.url || p.images?.[0]?.url });
+        next = page.next;
+      }
+    } catch (e) {
+      log("Couldn't load playlists: " + e.message);
+      if (/40[13]/.test(e.message)) log("Tip: tap Settings → Connect Spotify again to allow reading your playlists.");
+    }
+  }
+  drawLibrary();
+}
+function drawLibrary() {
+  const f = $("libsearch").value.trim().toLowerCase();
+  const v = (store.get("playlist") || "").toLowerCase();
+  const items = [
+    { key: "", name: "Liked Songs", sub: "Your saved songs, shuffled", icon: "♥" },
+    { key: "dj", name: "Spotify DJ", sub: "If Spotify allows it, else Liked Songs", icon: "🎧" },
+    ...playlists.map((p) => ({ key: "https://open.spotify.com/playlist/" + p.id, name: p.name, art: p.art, count: p.count,
+      sub: [p.owner, p.count != null ? p.count + " songs" : ""].filter(Boolean).join(" · ") })),
+  ].filter((i) => !f || i.name.toLowerCase().includes(f));
+  $("liblist").innerHTML = items.map((i, n) => `<button class="tile ${(i.key.toLowerCase() === v || (i.key && v.includes(i.key.split("/").pop().toLowerCase()))) ? "on" : ""}" data-n="${n}">
+      ${i.art ? `<img src="${esc(i.art)}" alt="" loading="lazy">` : `<span class="ph">${i.icon || "♪"}</span>`}
+      <span>${esc(i.name)}<small>${esc(i.sub)}</small></span></button>`).join("");
+  $("liblist").querySelectorAll(".tile").forEach((b) => (b.onclick = () => choose(items[Number(b.dataset.n)])));
+}
+async function choose(item) {
+  store.set("playlist", item.key);
+  store.set("playlistName", item.name);
+  store.set("playlistArt", item.art || "");
+  store.set("playlistCount", String(item.count || 0));
+  $("playlist").value = item.key;
+  $("library").classList.add("hidden");
+  showSource();
+  pool = []; poolIdx = 0;
+  log("Music for skips: " + item.name);
+  try { await loadPool(); } catch (e) { log(e.message); }
 }
 
 // ---------- Wiring ----------
@@ -283,6 +365,9 @@ async function init() {
   $("radio").classList.remove("hidden");
   render();
   loadPool().catch((e) => log(e.message));
+  showSource();
+  $("music").onclick = openLibrary;
+  $("libsearch").oninput = drawLibrary;
   pollNowPlaying();
 
   $("skip").onclick = () => {
