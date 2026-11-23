@@ -1,5 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
-const VERSION = 10;   // bump together with the ?v= in index.html so phones fetch the new file
+const VERSION = 11;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -240,7 +240,7 @@ setInterval(() => {
 async function playP3() {
   p3.src = CFG.streamUrl + "?t=" + Date.now();   // fresh connection = live edge, no backlog
   p3.volume = volume();
-  try { await p3.play(); mode = "p3"; paused = false; setPoll(5000); }
+  try { await p3.play(); mode = "p3"; paused = false; setPoll(5000); keepAwake(); }
   catch (e) { mode = "off"; status("Tap Play P3 to start."); log("Couldn't start P3 automatically: " + e.message); }
   render();
 }
@@ -309,7 +309,7 @@ async function backToP3(reason) {
 
 function onNewSong(prev) {
   // A different song announced while skipping means P3 went straight into the next song.
-  if (mode !== "spotify" || !skipping || song.title === skipping.title) return;
+  if (mode !== "spotify" || (skipping && song.title === skipping.title)) return;
   if ($("chain").checked) {
     skipping = song; returnAt = song.end;
     log(`P3 went straight into another song, still skipping: ${song.artist} - ${song.track || ""}`);
@@ -317,6 +317,28 @@ function onNewSong(prev) {
     backToP3("P3 started a new song, back to P3.");
   }
 }
+
+// ---------- Staying awake ----------
+// Android freezes Chrome tabs in the background once they stop playing sound, and during a
+// skip Chrome is silent (Spotify is playing). A frozen tab can't switch back to P3 on time.
+// Keeping the screen on with P3 DJ showing keeps the tab running.
+let wakeLock = null;
+async function keepAwake() {
+  if (!$("awake").checked || !("wakeLock" in navigator) || mode === "off") return;
+  try {
+    if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock.request("screen");
+  } catch (e) { console.warn("wake lock", e); }
+}
+function releaseAwake() { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } }
+let hiddenSince = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenSince = Date.now(); return; }
+  keepAwake();
+  const away = (Date.now() - hiddenSince) / 1000;
+  if (hiddenSince && away > 30) log(`Phone screen was off or P3 DJ was in the background for ${Math.round(away)} s. Android may have paused the app.`);
+  if (mode === "spotify" && Date.now() / 1000 >= returnAt) backToP3("Catching up: P3's song is over, back to P3.");
+  else if (mode !== "off") pollNowPlaying();
+});
 
 // ---------- Library picker ----------
 let playlists = null;
@@ -405,6 +427,7 @@ async function stopAll() {
   p3.pause(); p3.removeAttribute("src"); p3.load();
   clearInterval(pollTimer);
   mode = "off"; paused = false; skipping = null;
+  releaseAwake();
   $("now").textContent = "Stopped";
   render();
 }
@@ -435,6 +458,8 @@ async function init() {
   $("playlist").value = store.get("playlist") || "";
   $("chain").checked = store.get("chain") === "1";
   $("chain").onchange = () => store.set("chain", $("chain").checked ? "1" : "0");
+  $("awake").checked = store.get("awake") !== "0";
+  $("awake").onchange = () => { store.set("awake", $("awake").checked ? "1" : "0"); $("awake").checked ? keepAwake() : releaseAwake(); };
   $("connect").onclick = login;
   $("settings").onclick = () => { $("devicebox").classList.toggle("hidden"); $("setup").classList.toggle("hidden"); fillDevices(); };
   $("device").onchange = () => { store.set("deviceName", $("device").value); log("Skips will play on: " + ($("device").value || "this phone")); };
