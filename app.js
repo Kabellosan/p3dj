@@ -1,5 +1,5 @@
 // P3 DJ: listen to P3 live, skip a song to Spotify, come back when the hosts do.
-const VERSION = 11;   // bump together with the ?v= in index.html so phones fetch the new file
+const VERSION = 12;   // bump together with the ?v= in index.html so phones fetch the new file
 const CFG = window.P3DJ_CONFIG;
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state";
@@ -64,7 +64,7 @@ let pool = [], poolIdx = 0;
 async function loadPool() {
   const link = store.get("playlist") || "";
   const m = isDJ() ? null : link.match(/playlist[/:]([A-Za-z0-9]+)/);
-  let next = m ? `/playlists/${m[1]}/tracks?limit=100&fields=next,items(track(uri,is_local))` : "/me/tracks?limit=50";
+  let next = m ? `/playlists/${m[1]}/tracks?limit=100&fields=next,items(track(uri,is_local,duration_ms,name))` : "/me/tracks?limit=50";
   const uris = [];
   while (next && uris.length < 1000) {
     let page;
@@ -74,7 +74,7 @@ async function loadPool() {
       log("Can't list that playlist's songs, so the backup list is your Liked Songs.");
       next = "/me/tracks?limit=50"; continue;
     }
-    for (const it of page.items) if (it.track && !it.track.is_local) uris.push(it.track.uri);
+    for (const it of page.items) if (it.track && !it.track.is_local) uris.push({ uri: it.track.uri, s: it.track.duration_ms / 1000, name: it.track.name });
     next = page.next;
   }
   for (let i = uris.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [uris[i], uris[j]] = [uris[j], uris[i]]; }
@@ -83,8 +83,19 @@ async function loadPool() {
 }
 function nextSongs(n = 10) {
   const out = [];
-  for (let i = 0; i < Math.min(n, pool.length); i++) out.push(pool[poolIdx++ % pool.length]);
+  for (let i = 0; i < Math.min(n, pool.length); i++) out.push(pool[poolIdx++ % pool.length].uri);
   return out;
+}
+
+// Pick a song that ends ~10 s before P3's song does, so P3 fades back in for its last seconds.
+const MATCH_GAP_S = 10;
+const recent = [];
+function songForLength(target) {
+  const fits = pool.filter((t) => t.s && t.s <= target && t.s >= target - 25 && !recent.includes(t.uri));
+  const pick = fits.length ? fits[Math.floor(Math.random() * fits.length)]
+    : pool.filter((t) => t.s && t.s <= target && !recent.includes(t.uri)).sort((a, b) => b.s - a.s)[0];
+  if (pick) { recent.push(pick.uri); if (recent.length > 30) recent.shift(); }
+  return pick || null;
 }
 // Which Spotify device plays your skips. Default: this phone (type Smartphone), never just
 // "whatever was active", which is often a computer. You can pick one in the list.
@@ -104,19 +115,19 @@ async function phoneDevice() {
 // 1. Try the phone's remembered device id anyway: Spotify can often wake it.
 // 2. Otherwise open the Spotify app (that's what wakes it), wait for the phone to show up,
 //    then start the music there. You land in Spotify; P3 DJ keeps running behind it.
-async function startOnPhone() {
+async function startOnPhone(target) {
   let dev = await phoneDevice();
-  if (dev) { await startMusic(dev.id); return dev.name; }
+  if (dev) return { name: dev.name, len: await startMusic(dev.id, target) };
   const known = store.get("phoneId");
   if (known) {
-    try { await startMusic(known); log("Woke Spotify on your phone."); return store.get("phoneName") || "your phone"; }
+    try { const len = await startMusic(known, target); log("Woke Spotify on your phone."); return { name: store.get("phoneName") || "your phone", len }; }
     catch (e) { log("Spotify on your phone is asleep, opening it…"); }
   }
   location.href = "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.spotify.music;end";
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     try { dev = await phoneDevice(); } catch { dev = null; }
-    if (dev) { await startMusic(dev.id); return dev.name; }
+    if (dev) return { name: dev.name, len: await startMusic(dev.id, target) };
   }
   throw new Error("Spotify didn't show up on your phone. Open Spotify, play anything for a second, then skip again.");
 }
@@ -256,7 +267,15 @@ async function skip() {
   mode = "spotify"; render();
   try {
     p3.pause();
-    const name = await startOnPhone();
+    // Match the length when we know when P3's song started and how long it is.
+    let target = 0;
+    if (skipping && skipping.len && skipping.startKnown) {
+      target = skipping.start + skipping.len - Date.now() / 1000 - MATCH_GAP_S;
+      if (target < 45) target = 0;   // too little left to bother
+    }
+    const t0 = Date.now() / 1000;
+    const { name, len } = await startOnPhone(target);
+    if (len) returnAt = t0 + len - 1;
     log(`Skipped → Spotify on ${name}, back in ${Math.round(returnAt - Date.now() / 1000)} s`);
     setPoll(5000);
   } catch (e) {
@@ -269,8 +288,19 @@ async function skip() {
 // other apps, so if it refuses we fall back to your Liked Songs.
 const DJ_ID = "37i9dQZF1EYkqdzj48dyYq";
 const DJ_URI = "spotify:playlist:" + DJ_ID;
-async function startMusic(deviceId) {
+async function startMusic(deviceId, target = 0) {
   const url = `/me/player/play?device_id=${deviceId}`;
+  // Length-matched song (Liked Songs, or a playlist whose songs we could list).
+  if (target && !isDJ()) {
+    if (!pool.length) await loadPool();
+    const pick = songForLength(target);
+    if (pick) {
+      await api(url, { method: "PUT", body: JSON.stringify({ uris: [pick.uri, ...nextSongs(5).filter((u) => u !== pick.uri)] }) });
+      log(`Picked "${pick.name}" (${fmtLen(pick.s)}) to fit P3's song.`);
+      return pick.s;
+    }
+    log("No song of yours is short enough to fit, playing as usual.");
+  }
   if (isDJ()) {
     try { await api(url, { method: "PUT", body: JSON.stringify({ context_uri: DJ_URI }) }); log("Started Spotify's DJ."); return; }
     catch (e) {
@@ -281,7 +311,7 @@ async function startMusic(deviceId) {
   // A playlist plays as itself (shuffled, random start), so Spotify shows it as the source
   // and it works even for playlists the app isn't allowed to list.
   const m = (store.get("playlist") || "").match(/playlist[/:]([A-Za-z0-9]+)/);
-  if (m) {
+  if (m && !(target && pool.length)) {
     const count = Number(store.get("playlistCount") || 0);
     const body = { context_uri: "spotify:playlist:" + m[1] };
     if (count > 1) body.offset = { position: Math.floor(Math.random() * count) };
@@ -296,7 +326,9 @@ async function startMusic(deviceId) {
   }
   if (!pool.length) await loadPool();
   await api(url, { method: "PUT", body: JSON.stringify({ uris: nextSongs() }) });
+  return null;
 }
+const fmtLen = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 async function backToP3(reason) {
   if (mode !== "spotify") return;
